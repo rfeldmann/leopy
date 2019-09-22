@@ -8,7 +8,7 @@ in many research fields including astronomy. Unfortunately, such data are often
 treated in an ad hoc way potentially resulting in inconsistent parameter
 estimates. Furthermore, in a realistic setting, the variables of interest or
 their errors may have non-normal distributions which complicates the modeling.
-LEO-Py is a novel approach to compute the likelihood function for such data
+LEO-Py uses a novel technique to compute the likelihood function for such data
 sets. This approach employs Gaussian copulas to decouple the correlation
 structure of variables and their marginal distributions resulting in a flexible
 method to compute likelihood functions of data in the presence of measurement
