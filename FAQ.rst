@@ -4,8 +4,8 @@ Frequently Asked Questions
 Installation
 ------------
 
-Q: The installation via ``python setup.py install`` fails with the error
-``RuntimeError: Python version >= 3.5 required``.
+Q: Why does the installation via ``python setup.py install`` fail with the error
+``RuntimeError: Python version >= 3.5 required``?
 
 A: LEO-Py requires python version 3.5 or higher (type ``python --version`` on
 the command line to see which version you are using). On some systems, you call
