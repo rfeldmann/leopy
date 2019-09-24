@@ -5,6 +5,7 @@ Welcome to LEO-Py!
    :maxdepth: 2
 
    gettingstarted 
+   FAQ
    code
 
 Indices and tables

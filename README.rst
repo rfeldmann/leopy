@@ -22,28 +22,30 @@ Copyright 2019 University of Zurich, Robert Feldmann
 
 ----
 
+LEO-Py requires a working python3.5 installation or later to run.
+
 To install via setup.py:
 
 * [Optional] Set up a virtual environment
-  'python3 -mvenv /path/to/new/virtual/environment' and activate it via
-  'source /path/to/new/virtual/env/bin/activate'
+  ``python -mvenv /path/to/new/virtual/environment`` and activate it via
+  ``source /path/to/new/virtual/env/bin/activate``
 * Go to the package directory
-* Run 'python setup.py install'
+* Run ``python setup.py install``
 
 To test the installation:
 
-* Run 'python setup.py test' from the package directory
+* Run ``python setup.py test`` from the package directory
 
 To access the code documentation:
 
-* Run 'python setup.py build_html' from the package directory
+* Run ``python setup.py build_html`` from the package directory
 * Open ./build/sphinx/html/index.html to read the documentation
 
 Using leopy is very simple and consists of 4 steps:
 
-* Load the module ('import leopy')
-* Create an observational data set ('leopy.Observation')
-* Create a likelihood instance ('leopy.Likelihood')
+* Load the module (``import leopy``)
+* Create an observational data set (leopy.Observation)
+* Create a likelihood instance (leopy.Likelihood)
 * Call function p() of the likelihood instance
 
 For instance, a minimal example is::
