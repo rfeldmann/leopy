@@ -24,13 +24,19 @@ Copyright 2019 University of Zurich, Robert Feldmann
 
 LEO-Py requires a working python3.5 installation or later to run.
 
-To install via setup.py:
+Before you install LEO-Py, you may want to set up a virtual environment
+``python -mvenv /path/to/new/virtual/environment`` and activate it via
+``source /path/to/new/virtual/environment/bin/activate``
 
-* [Optional] Set up a virtual environment
-  ``python -mvenv /path/to/new/virtual/environment`` and activate it via
-  ``source /path/to/new/virtual/env/bin/activate``
+To install LEO-Py from source:
+
+* Download the source code from <https://github.com/rfeldmann/leopy>
 * Go to the package directory
 * Run ``python setup.py install``
+
+To install LEO-Py via PyPI:
+
+* Run ``pip install leopy-stat``
 
 To test the installation:
 
