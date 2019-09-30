@@ -24,7 +24,7 @@ Copyright 2019 University of Zurich, Robert Feldmann
 
 LEO-Py requires a working python3.5 installation or later to run.
 
-Before you install LEO-Py, you may want to set up a virtual environment
+Before installing LEO-Py, you may want to set up a virtual environment
 ``python -mvenv /path/to/new/virtual/environment`` and activate it via
 ``source /path/to/new/virtual/environment/bin/activate``
 
