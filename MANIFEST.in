@@ -1,4 +1,5 @@
 include README.rst
+include FAQ.rst
 include pytest.ini
 include LICENSE.txt
 recursive-include examples *.py
