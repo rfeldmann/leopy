@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 # read version (single place of truth)
-name = 'leopy'
+name = 'leopy-stat'
 version = {}
 with open("leopy/__about__.py") as fp:
     exec(fp.read(), version)
