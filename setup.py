@@ -1,4 +1,6 @@
 from setuptools import setup, find_packages
+from glob import glob
+from os.path import join
 
 # read version (single place of truth)
 name = 'leopy-stat'
@@ -38,7 +40,7 @@ setup(name=name,
       license='GNU GPLv3',
       keywords='statistics likelihood probability',
       packages=find_packages(),
-      data_files=[('paper', ['paper/xGASS.csv'])],
+      include_package_data=True,
       install_requires=[
         'pandas>=0.24.0',
         'scipy>=1.3.0',
