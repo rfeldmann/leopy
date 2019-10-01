@@ -28,7 +28,7 @@ Before installing LEO-Py, you may want to set up a virtual environment
 ``python -mvenv /path/to/new/virtual/environment`` and activate it via
 ``source /path/to/new/virtual/environment/bin/activate``.
 
-To install LEO-Py from repository:
+To install LEO-Py from a repository:
 
 * Download the source code from <https://github.com/rfeldmann/leopy>.
 * Go to the package directory.
