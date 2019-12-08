@@ -16,7 +16,8 @@ uncertainty, censoring, and missing data.
 
 If you use any version of this code, please properly reference the code paper:
 *Feldmann, R. (2019) "LEO-Py: Estimating likelihoods for correlated, censored,
-and uncertain data with given marginal distributions", Astronomy & Computing*
+and uncertain data with given marginal distributions", Astronomy & Computing,
+29, 100331, DOI:10.1016/j.ascom.2019.100331*
 
 Copyright 2019 University of Zurich, Robert Feldmann
 
