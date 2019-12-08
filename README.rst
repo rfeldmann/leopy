@@ -66,12 +66,11 @@ For instance, a minimal example is::
     d = {'v0': [1, 2], 'e_v0': [0.1, 0.2],
          'v1': [3, 4], 'e_v1': [0.1, 0.1]}
     obs = Observation(pd.DataFrame(d), 'testdata')
-    # Reading dataset 'testdata' and extracting 2 variables (['v0', 'v1'])
-    # Errors of different observables are assumed to be uncorrelated
+
     l = Likelihood(obs, p_true='lognorm', p_cond='norm')
     l.p([0.5, 0.7], [1, 2], shape_true=[[1.4], [2.]])
-    # array([[0.0441545],
-    #        [0.0108934]])
+    # array([[0.04415447],
+    #        [0.01089338]])
 
 Further examples are provided in the 'paper' and 'examples' sub-directories
 (if installed from source).
