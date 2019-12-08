@@ -7,9 +7,7 @@ Copyright 2019 University of Zurich, Robert Feldmann
 
 This module makes use of the source code of the open-source scipy.stats module.
 The class doc-strings in this module include some text from the documentation
-of scipy.stats functions.
-
-Please see
+of scipy.stats functions. Please see
 Jones E, Oliphant E, Peterson P, et al. SciPy: Open Source Scientific Tools
 for Python, 2001-, http://www.scipy.org
 """
@@ -395,7 +393,7 @@ def nearest_psd(A):
     return XF
 
 
-def find_cdf_limits(q, f, a, b, args=(), exponent=1.1, maxiter=100,
+def find_cdf_limits(q, f, a, b, args=(), exponent=1.0, maxiter=100,
                     return_iterations=False):
     """find arguments xl, xu of cdf f such that f(xl)<=q & f(xu)>=1-q"""
     # f is assumed to be a monoton. incr. function from (a,b) to [0, 1]
@@ -406,12 +404,13 @@ def find_cdf_limits(q, f, a, b, args=(), exponent=1.1, maxiter=100,
     # g_inv maps from x to y
 
     # map from [0, 1] to the actual domain of f
+    # two functions as loss of accuracy results in y != 1-(1-y)
     if np.isneginf(a) and np.isposinf(b):
         gs = [lambda y: np.log(y/(1.-y)),
               lambda y: np.log((1.-y)/y)]
     elif np.isneginf(a):
-        gs = [lambda y: (y-1.)/y + b,
-              lambda y: y/(1.-y) + b]
+        gs = [lambda y: -(1.-y)/y + b,
+              lambda y: -y/(1.-y) + b]
     elif np.isposinf(b):
         gs = [lambda y: y/(1.-y) + a,
               lambda y: (1.-y)/y + a]
@@ -419,45 +418,81 @@ def find_cdf_limits(q, f, a, b, args=(), exponent=1.1, maxiter=100,
         gs = [lambda y: y*(b-a) + a,
               lambda y: (1.-y)*(b-a) + a]
 
+    def calc_bad(y, shape_params, limit_type, sel=np.array(False)):
+
+        g = np.zeros_like(y)
+        g[~sel] = gs[0](y[~sel])
+        g[sel] = gs[1](y[sel])
+
+        fval = np.array(f(g, *shape_params))
+        limit = g * np.ones_like(fval)
+        if limit_type == 0:
+            bad = np.array((fval > q))
+        else:
+            bad = np.array((fval < 1-q))
+        return limit, bad, fval
+
     # limit_type 0/1 is lower/upper limit
     for limit_type in range(2):
-        g = gs[limit_type]
-        for i_n, n in enumerate(range(1, maxiter)):
-            y = 2**(-n**exponent)
-            if i_n == 0:
-                fval = np.array(f(g(y), *args))
-                limit = np.array(g(y) * np.ones_like(fval))
-                if limit_type == 0:
-                    bad = np.array((fval > q))
-                else:
-                    bad = np.array((fval < 1-q))
-            else:
-                sh = [np.array(_)[bad] for _ in args]
-                fval[bad] = f(g(y), *sh)
-                limit[bad] = g(y)
-                if limit_type == 0:
-                    bad[bad] = (fval[bad] > q)
-                else:
-                    bad[bad] = (fval[bad] < 1-q)
 
-            nbad = np.sum(bad)
-            if nbad == 0 or y == 0:
+        limit, bad, fval = calc_bad(np.array(0.5), args, limit_type)
+
+        limit = np.atleast_1d(limit)
+        bad = np.atleast_1d(bad)
+
+        bad_initial = bad
+        not_flipped = np.ones_like(bad)
+
+        for i_n, n in enumerate(range(2, maxiter)):
+            y0 = 2**(-n**exponent)
+            if y0 == 0:
                 break
+
+            y = y0 * np.ones(np.sum(not_flipped))
+            if limit_type == 0:
+                sel = ~bad_initial[not_flipped]
+            else:
+                sel = bad_initial[not_flipped]
+
+            sh = [np.atleast_1d(_)[not_flipped] for _ in args]
+            limit_new, bad_new, fval = calc_bad(
+                y, sh, limit_type, sel)
+
+            sel = ~bad_new
+
+            ind_notflipped = np.where(not_flipped)[0]
+
+            limit_sel = ind_notflipped[sel]
+            limit_notsel = ind_notflipped[~sel]
+            limit[limit_sel] = limit_new[sel]
+
+            sel1 = ~bad_new & bad_initial[not_flipped]
+            sel2 = bad_new & ~bad_initial[not_flipped]
+            not_flipped[ind_notflipped[sel1 | sel2]] = False
+
+            nn = np.sum(not_flipped)
+
+            if nn == 0:
+                break
+
+            limit[limit_notsel] = limit_new[~sel]
 
         if limit_type == 0:
             lower_limit = limit
             n_lower_limit = n
-            if nbad > 0:
-                warnings.warn('Maximum number of iterations ({}) exceeded '
-                              'while determining lower limit.'.format(maxiter),
-                              AccuracyWarning)
         else:
             upper_limit = limit
             n_upper_limit = n
-            if nbad > 0:
-                warnings.warn('Maximum number of iterations ({}) exceeded '
-                              'while determining upper limit.'.format(maxiter),
-                              AccuracyWarning)
+
+        if nn > 0:
+            if limit_type == 0:
+                limit_type_string = 'lower'
+            else:
+                limit_type_string = 'upper'
+            warnings.warn('Maximum number of iterations ({}) exceeded '
+                          'while determining {} limit (n={})'.format(
+                          maxiter, limit_type_string, nn),
+                          AccuracyWarning)
 
     if return_iterations:
         return lower_limit, upper_limit, n_lower_limit, n_upper_limit

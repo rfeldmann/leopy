@@ -69,8 +69,9 @@ class Likelihood:
         Errors of different observables are assumed to be uncorrelated
         >>> l = Likelihood(obs, p_true='lognorm', p_cond='norm')
         >>> l.p([0.5, 0.7], [1, 2], shape_true=[[1.4], [2.]])
-        array([[0.0441545],
-               [0.0108934]])
+        array([[0.04415447],
+               [0.01089338]])
+
         """
         self.obs = obs
         self.verbosity = verbosity
@@ -566,8 +567,6 @@ class Likelihood:
 
         vars_array = np.array(vars)
         R_true = R[np.ix_(vars_array, vars_array)]
-
-        correlated_errors = Rc is not None
 
         f_obs = np.zeros((Nobs, Nvar, Nmod))
         F_obs = np.zeros_like(f_obs)

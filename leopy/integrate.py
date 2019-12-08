@@ -171,8 +171,8 @@ def quadrature(func, a, b, args=(), tol=1.49e-8, rtol=1.49e-8, maxiter=10,
     args : tuple, optional
         Extra arguments to pass to function.
     tol, rtol : float, optional
-        Iteration stops when error between last two iterates is less than
-        `tol` OR the relative change is less than `rtol`.
+        Iteration stops when error between last two iterates is less than or
+        equal to `tol` AND the relative change is less than or equal to `rtol`.
     maxiter : int, optional
         2**(`n_iter` + `maxiter`) is maximum order of Gaussian quadrature.
     n_iter : int, optional
@@ -243,16 +243,18 @@ def quadrature(func, a, b, args=(), tol=1.49e-8, rtol=1.49e-8, maxiter=10,
             err[bad] = abs(newval[bad]-val[bad])
         val[bad] = newval[bad]
 
-        bad[bad] = np.logical_not(np.logical_or(
-            err[bad] < tol, err[bad] < rtol*abs(val[bad]))).flatten()
+        bad[bad] = np.logical_not(np.logical_and(
+            err[bad] <= tol, err[bad] <= rtol*abs(val[bad]))).flatten()
 
         nbad = np.sum(bad)
 
     if nbad > 0:
         warnings.warn(
             '{} entries not converged. Largest error = {:e}. '
+            'Largest relative error = {:e}. '
             'Consider increasing maxiter (currently set to {})'.format(
-                nbad, np.max(err), maxiter),
+                nbad, np.max(err[bad]), np.max(err[bad]/abs(val[bad])),
+                maxiter),
             AccuracyWarning)
 
     return val, err

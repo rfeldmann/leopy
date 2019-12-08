@@ -40,7 +40,7 @@ class Convolution(scipy.stats.rv_continuous):
     """
 
     def __init__(self, p_XY, p_Y, atol=1e-5, rtol=1e-5, eps=1e-5,
-                 n_iter=8, maxiter=5, cdf_maxiter=100,
+                 n_iter=8, maxiter=7, cdf_maxiter=100,
                  log_mode=True, verbosity=0, **kwargs):
         r"""Initialize self.
 
@@ -79,7 +79,7 @@ class Convolution(scipy.stats.rv_continuous):
             (each time by 1). `maxiter` is the maximum number of times
             n_iter can be increased this way. If maxiter is reached and the
             `atol` and `rtol` limits are not satisfied, an AccuracyWarning is
-            raised (maxiter is >= 0, default is 5).
+            raised (maxiter is >= 0, default is 7).
         cdf_maxiter : int
             Maximum number of iterations to find the points where the CDF is
             below `eps` and above 1-`eps`. Needs to be larger than 10
@@ -113,11 +113,11 @@ class Convolution(scipy.stats.rv_continuous):
         >>> import scipy.stats
         >>> a = Convolution(scipy.stats.norm, scipy.stats.lognorm)
         >>> a.pdf([-1, 0, 10.], 2., 1., 0., 2.)
-        array([0.06118279, 0.15266689, 0.01466218])
+        array([0.06118352, 0.15266811, 0.01466217])
         >>> a.cdf([-1, 0, 10.], 2., 1., 0., 2.)
-        array([0.03449056, 0.14173643, 0.7884726 ])
+        array([0.03449105, 0.14173798, 0.7884755 ])
         >>> round(a.median(2., 1., 0., 2.), 5)
-        2.2706
+        2.27057
         >>> b = Convolution(scipy.stats.norm, scipy.stats.norm)
         >>> b.median(2., 1., 1.5)
         1.0
@@ -301,8 +301,8 @@ class Convolution(scipy.stats.rv_continuous):
                 - self.p_Y.cdf(lY, *shape_params_Y)))
 
         if log_mode:
-            lower_limit = np.log(lower_limit+1e-100)
-            upper_limit = np.log(upper_limit+1e-100)
+            lower_limit = np.log(lower_limit+1e-320)
+            upper_limit = np.log(upper_limit+1e-320)
 
         result = leopy.integrate.quadrature(
             f, lower_limit, upper_limit,
