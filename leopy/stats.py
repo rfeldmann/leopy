@@ -164,6 +164,7 @@ class zi_gamma_gen(scipy.stats.rv_continuous):
 
 zi_gamma = zi_gamma_gen(name='zi_gamma')
 
+
 class zi_gamma_lognorm_gen(zi_gamma_gen):
     r"""A (pseudo) zero-inflated gamma + lognormal continuous random variable.
 
@@ -258,6 +259,95 @@ class zi_gamma_lognorm_gen(zi_gamma_gen):
         return cond
 
 zi_gamma_lognorm = zi_gamma_lognorm_gen(name='zi_gamma_lognorm')
+
+
+class zi_gamma_gamma_gen(zi_gamma_gen):
+    r"""A (pseudo) zero-inflated gamma + gamma continuous random variable.
+
+    Subclass of `scipy.stats.rv_continuous`.
+
+    This class implements a mixture model of two gammas and a half-normal
+    distribution. The half-normal distribution can be interpreted as a
+    zero-inflated component provided :math:`s \ll 1`.
+    A possible use of the second gamma distribution is to model outliers from
+    the primary (zero-inflated gamma) distribution.
+
+    Notes
+    -----
+    The probability density function for `zi_gamma_gamma` is:
+
+    .. math::
+        f(x, a, s, z, A, S, Z) =
+            (1-Z)\left[(1-z)\frac{x^{a-1} \exp(-x)}{\Gamma(a)}
+                       + z \frac{\exp(-x^2/(2s^2))}{s\sqrt{2\pi}}\right] \\
+            + Z \left[\frac{x^{A-1}\exp(-x/S)}{S^A\Gamma(A)}\right]
+
+    for :math:`x \ge 0`, :math:`a > 0`, :math:`s > 0`, :math:`0 \le z \le 1`,
+    :math:`A > 0`, :math:`S > 0`, and :math:`0 \le Z \le 1`.
+    Here :math:`\Gamma(a)` refers to the gamma function.
+
+    `zi_gamma_lognorm` takes ``a``, ``s``, ``z``, ``A``, ``S``, and ``Z`` as
+    shape parameters for :math:`a`, :math:`s`, :math:`z`, :math:`A`, :math:`S`,
+    and :math:`Z`.
+
+    The probability density above is defined in the "standardized" form. To
+    shift and/or scale the distribution use the ``loc`` and ``scale``
+    parameters.
+    Specifically, ``zi_gamma_gamma.pdf(x, a, s, z, A, S, Z, loc, scale)``
+    is equivalent to ``zi_gamma_gamma.pdf(y, a, s, z, A, S, Z) / scale`` with
+    ``y = (x - loc) / scale``.
+    """
+    def __init__(self, *args, **kwargs):
+        self._return_index = kwargs.pop('index', False)
+        super().__init__(*args, **kwargs)
+
+    def _pdf(self, x, a, s, z, A, S, Z):
+        return ((1-Z)*super()._pdf(x, a, s, z)
+                 + Z*scipy.stats.gamma._pdf(x/S, A)/S)
+
+    def _cdf(self, x, a, s, z, A, S, Z):
+        return ((1-Z)*super()._cdf(x, a, s, z)
+                + Z*scipy.stats.gamma._cdf(x/S, A))
+
+    def _rvs(self, a, s, z, A, S, Z):
+        sz = self._size
+        ind = self._return_index
+        be = scipy.stats.bernoulli.rvs(Z, size=sz)
+        ln = scipy.stats.gamma.rvs(A, size=sz, scale=S)
+        if ind:
+            zi_ga, zi_ga_ind = super()._rvs(a, s, z)
+            return np.where(be, ln, zi_ga), zi_ga_ind, be
+        else:
+            zi_ga = super()._rvs(a, s, z)
+            return np.where(be, ln, zi_ga)
+
+    def _prob_component(self, x, a, s, z, A, S, Z):
+        p = np.zeros((3, len(x)))
+        p[:2, :] = (1-Z)*super()._prob_component(x, a, s, z)
+        p[2, :] = Z*scipy.stats.gamma._pdf(x/S, A)/S
+        return p
+
+    def _argcheck(self, *args):
+        """Check for correct values on args and keywords.
+
+        Returns condition array of 1's where arguments are correct and
+         0's where they are not.
+
+        """
+        cond = 1
+        cond = np.logical_and(cond, (np.asarray(args[0]) > 0))
+        cond = np.logical_and(cond, (np.asarray(args[1]) > 0))
+        cond = np.logical_and(
+            np.logical_and(cond, (np.asarray(args[2]) >= 0)),
+            (np.asarray(args[2]) <= 1))
+        cond = np.logical_and(cond, (np.asarray(args[3]) > 0))
+        cond = np.logical_and(cond, (np.asarray(args[4]) > 0))
+        cond = np.logical_and(
+            np.logical_and(cond, (np.asarray(args[5]) >= 0)),
+            (np.asarray(args[5]) <= 1))
+        return cond
+
+zi_gamma_gamma = zi_gamma_gamma_gen(name='zi_gamma_gamma')
 
 
 class gamma_lognorm_gen(scipy.stats.rv_continuous):

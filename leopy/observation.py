@@ -285,7 +285,7 @@ class Observation:
         if auxiliary is not None:
             for aux in auxiliary:
                 if aux in self.df:
-                    eval('self.{} = self.df["{}"].to_numpy()'.format(
+                    exec('self.{} = self.df["{}"].to_numpy()'.format(
                          aux, aux))
 
         # potentially censored variables
