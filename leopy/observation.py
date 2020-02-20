@@ -34,7 +34,7 @@ class Observation:
 
         Parameters
         ----------
-        df : Pandas dataframe or dict
+        df : Pandas dataframe or dict or numpy array
             Contains the observational data.
         reference : str
             Short identifier of the data source (i.e., 'Author et al. 2017').
@@ -137,10 +137,15 @@ class Observation:
         import pandas as pd
         if isinstance(df, dict):
             df = pd.DataFrame(df)
+        elif isinstance(df, np.ndarray):
+            columns = []
+            for i in range(df.shape[1]):
+                columns.append('{}{}'.format(prefix_value, i))
+            df = pd.DataFrame(df, columns=columns)
         if not isinstance(df, pd.DataFrame):
             raise TypeError(
-                'Observations have to be given in form of a dictionary or '
-                'pandas data frame.')
+                'Observations have to be given in form of a numpy array, '
+                'dictionary, or pandas data frame.')
 
         self.df = df
         self.reference = reference

@@ -33,8 +33,9 @@ class Likelihood:
 
         Parameters
         ----------
-        obs : object
-            Instance of class `Observation` containing the observed data.
+        obs : object or int
+            Instance of class `Observation` containing the observed data or
+            the number of observables per data point.
         p_true : object or str
             Instance of class `scipy.stats.rv_continuous` describing the
             probability distribution of the true values of a given observable.
@@ -73,13 +74,20 @@ class Likelihood:
                [0.01089338]])
 
         """
-        self.obs = obs
+        try:
+            num_var = obs.num_var
+            self.obs = obs
+        except AttributeError:
+            num_var = obs
+            self.obs = leopy.Observation(
+                np.zeros((0, num_var)), 'empty', verbosity=0)
+
         self.verbosity = verbosity
 
         # set self.p_true & self.p_cond
         for ip, p in enumerate([p_true, p_cond]):
             if type(p) in [list, tuple]:
-                assert len(p) == obs.num_var
+                assert len(p) == num_var
                 sp = []
                 for _p in p:
                     if type(_p) == str:
@@ -88,9 +96,9 @@ class Likelihood:
                         sp.append(_p)
             else:
                 if type(p) == str:
-                    sp = [eval('scipy.stats.{}'.format(p))] * obs.num_var
+                    sp = [eval('scipy.stats.{}'.format(p))] * num_var
                 else:
-                    sp = [p] * obs.num_var
+                    sp = [p] * num_var
             if ip == 0:
                 self.p_true = sp
             elif ip == 1:
@@ -98,7 +106,7 @@ class Likelihood:
 
         # set self.p_obs
         self.p_obs = []
-        for var in range(obs.num_var):
+        for var in range(num_var):
             if self.p_cond[var] is not None:
                 self.p_obs.append(leopy.Convolution(
                     self.p_cond[var], self.p_true[var], verbosity=verbosity,
@@ -214,6 +222,29 @@ class Likelihood:
         S = R * np.outer(t_diag, t_diag) + Rc * np.outer(t_diagc, t_diagc)
         np.fill_diagonal(S, 1)  # to be save
         return S
+
+    def _convert_to_list_of_array(self, x, name, num_var, depth=1):
+        if x is None:
+            x = [np.array([])] * num_var
+            return x
+
+        if not isinstance(x, (list, tuple)):
+            try:
+                x = list(x)
+            except TypeError:
+                raise TypeError('Parameter {} needs to be a list/tuple or '
+                                'convertable to a list.'.format(name))
+
+        if len(x) != num_var:
+            raise TypeError('Parameter {} needs to be a list/tuple of '
+                            'length {}.'.format(name, num_var))
+
+        if depth == 1:
+            x = [np.array(e) for e in x]
+        elif depth == 2:
+            x = [np.atleast_1d(e) for e in x]
+
+        return x
 
     def p(self, loc_true, scale_true, vars=None, offset=0, rescale_cond=None,
           obs=None, R_true=None, shape_true=None, shape_cond=None,
@@ -339,33 +370,14 @@ class Likelihood:
             assert np.allclose(R_true, R_true.T)
             assert np.all(R_true) >= -1 and np.all(R_true) <= 1
 
-        def convert_to_list_of_array(x, name, depth=1):
-            if x is None:
-                x = [np.array([])] * obs.num_var
-                return x
-
-            if not isinstance(x, (list, tuple)):
-                try:
-                    x = list(x)
-                except TypeError:
-                    raise TypeError('Parameter {} needs to be a list/tuple or '
-                                    'convertable to a list.'.format(name))
-
-            if len(x) != obs.num_var:
-                raise TypeError('Parameter {} needs to be a list/tuple of '
-                                'length {}.'.format(name, obs.num_var))
-
-            if depth == 1:
-                x = [np.array(e) for e in x]
-            elif depth == 2:
-                x = [np.atleast_1d(e) for e in x]
-
-            return x
-
-        loc_true = convert_to_list_of_array(loc_true, 'loc_true')
-        scale_true = convert_to_list_of_array(scale_true, 'scale_true')
-        shape_true = convert_to_list_of_array(shape_true, 'shape_true', 2)
-        shape_cond = convert_to_list_of_array(shape_cond, 'shape_cond', 2)
+        loc_true = self._convert_to_list_of_array(
+            loc_true, 'loc_true', obs.num_var)
+        scale_true = self._convert_to_list_of_array(
+            scale_true, 'scale_true', obs.num_var)
+        shape_true = self._convert_to_list_of_array(
+            shape_true, 'shape_true', obs.num_var, 2)
+        shape_cond = self._convert_to_list_of_array(
+            shape_cond, 'shape_cond', obs.num_var, 2)
 
         # check consistency of loc_true and scale_true shapes
         Nmod = 1
@@ -535,9 +547,10 @@ class Likelihood:
 
                 chunks.append(
                     [Nmod, vars, v[j0:j1], ev[j0:j1], cv[j0:j1], limt[j0:j1],
+                     self.p_true, self.p_cond, self.p_obs,
                      l_loc_true, l_scale_true, l_shape_cond, l_shape_true,
                      R_true, obs.Rc[j0:j1],
-                     aggregate_S, obs.correlated_errors])
+                     aggregate_S, obs.correlated_errors, self.verbosity])
 
             try:
                 p = np.concatenate(pool.map(self._p_arg_list, chunks))
@@ -546,8 +559,258 @@ class Likelihood:
 
         else:
             p = self._p(Nmod, vars, v, ev, cv, limt,
+                        self.p_true, self.p_cond, self.p_obs,
                         loc_true, scale_true, shape_cond, shape_true,
-                        R_true, obs.Rc, aggregate_S, obs.correlated_errors)
+                        R_true, obs.Rc, aggregate_S, obs.correlated_errors,
+                        self.verbosity)
+
+        if return_log:
+            return np.log(p)
+        else:
+            return p
+
+    def pdf(self, v, loc_true, scale_true, R_true=None, shape_true=None,
+            return_log=False, pool=None):
+        """Compute probability of true data values given model parameters.
+
+        This function computes the probability of finding the true
+        data `v` given the distribution parameters `loc_true` (loc),
+        `scale_true` (scale), `shape_true` (shape) of the true data, and
+        the correlation between true data variables as described by the
+        correlation matrix `R_true`.
+
+        In the following, N (=v.shape[0]) refers to the number of
+        true data points, Nvar (=v.shape[1]) is the number of variables per
+        data point, Npar (=scipy.stats.<distribution>.numargs) is the number of
+        shape parameters of a distribution, and Nmod is the number of
+        simultaneous model calculations.
+
+        The distribution parameters `loc_true` and `scale_true` are lists of
+        length Nvar containing numpy arrays of a shape that can be broadcasted
+        to shape (N, Nmod). In the simplest case, `loc_true` and
+        `scale_true` are lists of Nvar floats, i.e., they provide overall
+        the location and scale parameters for the 1-dimensional distributions
+        (p_true) of each variable.
+
+        The distribution parameters `shape_true` and `shape_cond` are lists
+        of length Nvar containing numpy arrays of a shape that can be
+        broadcasted to shape (Npar, N, Nmod).
+
+        The final dimension (Nmod) of the distribution parameters allows for
+        simultaneous model calculations which increases computational
+        efficiency.
+
+        Parameters
+        ----------
+        v : array_like, pandas DataFrame, dict, or Observation
+            The true data values.
+        loc_true : list of arrays
+            The location parameter of the p_true distribution.
+        scale_true : list of arrays
+            The scale parameter of the p_true distribution.
+        R_true : array or None
+            Correlation matrix between true data variables. R_true should be
+            an array of shape (Nvar, Nvar) or None. In
+            the latter case, R_true is assumed to be the identity matrix, i.e.,
+            different variables are uncorrelated (the default is None).
+        shape_true : list of list of arrays or None
+            Shape parameters of the p_true distribution. Please refer to the
+            documentation of the p_true distribution to see whether and how
+            many shape parameters are required (the default is None, implying
+            no shape parameters are provided).
+        return_log : bool
+            If true, return ln of the likelihood (the default is False).
+        pool : object or None
+            If pool object is provided, the likelihood calculation is
+            parallelized by dividing the data set in equal chunks and by
+            computing the likelihood for each chunk on a seperate task/process.
+            The pool object needs to support a map function. The functionality
+            has been tested with the multiprocessing and MPI pools provided by
+            the schwimmbad python package. If set to None, the likelihood
+            calculation is not explicitly parallelized (default is None).
+
+        Returns
+        -------
+        array
+            Probability of the true data given the model parameters.
+            The function returns an array of shape (N, Nmod).
+        """
+        import pandas as pd
+        if (isinstance(v, tuple) or isinstance(v, list) or
+                isinstance(v, np.ndarray)):
+            v = np.atleast_2d(v)
+        elif isinstance(v, leopy.Observation):
+            v = v.v
+        elif isinstance(v, dict):
+            v = pd.DataFrame(v).to_numpy()
+        elif isinstance(v, pd.DataFrame):
+            v = v.to_numpy()
+        else:
+            raise TypeError(
+                'True values have to be given in form of a numpy array, '
+                'dictionary, pandas data frame, or Observation.')
+
+        assert v.ndim == 2
+        N = v.shape[0]
+        num_var = v.shape[1]
+
+        vars = list(range(num_var))
+
+        if R_true is None:
+            R_true = np.identity(num_var)
+        else:
+            R_true = np.array(R_true)
+            assert R_true.ndim == 2
+            assert np.allclose(np.diag(R_true), 1.)
+            assert np.allclose(R_true, R_true.T)
+            assert np.all(R_true) >= -1 and np.all(R_true) <= 1
+
+        loc_true = self._convert_to_list_of_array(
+            loc_true, 'loc_true', num_var)
+        scale_true = self._convert_to_list_of_array(
+            scale_true, 'scale_true', num_var)
+        shape_true = self._convert_to_list_of_array(
+            shape_true, 'shape_true', num_var, 2)
+
+        # check consistency of loc_true and scale_true shapes
+        Nmod = 1
+        for ivar, var in enumerate(vars):
+            for s, l in zip([loc_true[var], scale_true[var]],
+                            ['loc_true', 'scale_true']):
+                if ((s.ndim > 0)
+                        and (s.shape[0] != N) and (s.shape[0] != 1)):
+                    raise ValueError(
+                        '{} for variable {} should be numpy array of '
+                        'shape ({},...) or (1,...) but found {}'.format(
+                            l, var, N, s.shape))
+                elif s.ndim > 1:
+                    if ((Nmod != s.shape[1])
+                            and (Nmod != 1) and (s.shape[1] != 1)):
+                        raise ValueError(
+                            'Inconsistent number of simultaneous model '
+                            'calculations (Nmod) found in variable {} of {}: '
+                            '{} != {}'.format(var, l, Nmod, s.shape[1]))
+                    else:
+                        Nmod = s.shape[1]
+
+        # check consistency of shape_cond and shape_true shapes
+        for ivar, var in enumerate(vars):
+            p = self.p_true[var]
+            s = shape_true[var]
+            l = '_true'
+
+            if not p:
+                if s.size > 0:
+                    raise ValueError(
+                        'shape{} is not empty for variable {}'
+                        ' but no parameters are required'.format(l, var))
+            elif (s.ndim > 0) and (s.shape[0] != p.numargs):
+                raise ValueError('shape{} provides {} parameters for '
+                                 'variable {} but {} are required'.format(
+                                    l, s.shape[0], var, p.numargs))
+            else:
+                for ss in s:
+                    if ss.ndim > 0:
+                        if ((ss.shape[0] != N)
+                                and (ss.shape[0] != 1)):
+                            raise ValueError(
+                                'shape{} for variable {} should be numpy '
+                                'array of shape ({},{},...) or ({},1,...) '
+                                'but found {}'.format(
+                                    l, var, p.numargs, N,
+                                    p.numargs, ss.shape))
+                    elif ss.ndim > 1:
+                        if ((Nmod != ss.shape[1])
+                                and (Nmod != 1) and (ss.shape[1] != 1)):
+                            raise ValueError(
+                                'Inconsistent number of simultaneous '
+                                'model calculations (Nmod) found in '
+                                'variable {} of {}: {} != {}'.format(
+                                    var, l, Nmod, ss.shape[1]))
+                        else:
+                            Nmod = ss.shape[1]
+
+        cv = np.zeros((N, num_var))
+        limt = np.ones((N, num_var))
+
+        rho = np.zeros((N, num_var**2))
+        for i in range(num_var):
+            rho[:, i*num_var + i] = 1  # diagonal entries
+        Rc = rho.reshape((N, num_var, num_var))
+
+        p_cond = [None] * num_var
+
+        # broadcast distribution parameters
+        for ivar, var in enumerate(vars):
+            loc_true[var] = np.broadcast_to(loc_true[var], (N, Nmod))
+            scale_true[var] = np.broadcast_to(scale_true[var], (N, Nmod))
+            if self.p_true[var]:
+                Npar = self.p_true[var].numargs
+                if Npar > 0:
+                    if shape_true[var].ndim == 0:
+                        # same shapes for Npar x N x Nmod
+                        shape_true[var] = shape_true[var][None, None, None]
+                    elif shape_true[var].ndim == 1:
+                        # same shapes for N x Nmod
+                        shape_true[var] = shape_true[var][:, None, None]
+                    elif shape_true[var].ndim == 2:
+                        # same shapes for Nmod
+                        shape_true[var] = shape_true[var][:, :, None]
+                    shape_true[var] = np.broadcast_to(
+                        shape_true[var], (Npar, N, Nmod))
+                else:
+                    shape_true[var] = shape_true[var].reshape(Npar, N, Nmod)
+
+        if N == 0:
+            p = np.zeros((0, Nmod))
+
+        elif pool is not None:
+
+            size = max(pool.size, 1)
+
+            splits = np.array_split(range(N), size)
+
+            chunks = []
+            for rank in range(size):
+
+                if len(splits[rank]) == 0:
+                    continue
+
+                j0 = splits[rank][0]
+                j1 = splits[rank][-1]+1
+
+                l_loc_true = []
+                l_scale_true = []
+                l_shape_true = []
+                for var in range(num_var):
+                    if var in vars:
+                        l_loc_true.append(loc_true[var][j0:j1, :])
+                        l_scale_true.append(scale_true[var][j0:j1, :])
+                        if self.p_true[var]:
+                            l_shape_true.append(shape_true[var][:, j0:j1, :])
+                        else:
+                            l_shape_true.append([])
+                    else:
+                        l_loc_true.append([])
+                        l_scale_true.append([])
+                        l_shape_true.append([])
+
+                chunks.append(
+                    [Nmod, vars, v[j0:j1], None, cv[j0:j1], limt[j0:j1],
+                     self.p_true, p_cond, self.p_true,
+                     l_loc_true, l_scale_true, None, l_shape_true,
+                     R_true, Rc[j0:j1], 'mean', False, 0])
+
+            try:
+                p = np.concatenate(pool.map(self._p_arg_list, chunks))
+            except TypeError:
+                p = np.concatenate(list(pool.map(self._p_arg_list, chunks)))
+
+        else:
+            p = self._p(Nmod, vars, v, None, cv, limt,
+                        self.p_true, p_cond, self.p_true,
+                        loc_true, scale_true, None, shape_true,
+                        R_true, Rc, 'mean', False, 0)
 
         if return_log:
             return np.log(p)
@@ -558,8 +821,9 @@ class Likelihood:
         return self._p(*chunks)
 
     def _p(self, Nmod, vars, v, scale_cond, cv, limit_types,
+           p_true, p_cond, p_obs,
            loc_true, scale_true, shape_cond, shape_true, R, Rc, aggregate_S,
-           correlated_errors):
+           correlated_errors, verbosity):
         """Core routine to compute likelihood - Please call p() instead."""
 
         Nobs = v.shape[0]
@@ -583,16 +847,16 @@ class Likelihood:
         scale = np.ones_like(z)
 
         trivial_R = np.all(np.isclose(R_true, np.identity(Nvar)))
-        if self.verbosity > 0:
+        if verbosity > 0:
             print('Latent variables are correlated: {}'.format(
                 not trivial_R))
-        if self.verbosity > 0:
+        if verbosity > 0:
             print('Measurement errors are correlated: {}'.format(
                 correlated_errors))
         correlated_observables = True
         if trivial_R and not correlated_errors:
             correlated_observables = False
-        if self.verbosity > 0:
+        if verbosity > 0:
             print('Observed variables are correlated: {}'.format(
                 correlated_observables))
 
@@ -607,11 +871,12 @@ class Likelihood:
             t_v = v[obs_nomiss, var].reshape(num_nomiss, 1)
             t_lt = loc_true[var][obs_nomiss]
             # t_sc = np.outer(scale_cond[obs_nomiss, var], np.ones(Nmod))
-            t_sc = scale_cond[obs_nomiss, var].reshape(num_nomiss, 1)
+            if p_cond[var] is not None:
+                t_sc = scale_cond[obs_nomiss, var].reshape(num_nomiss, 1)
 
-            if self.p_obs[var].name == 'norm':
+            if p_obs[var].name == 'norm':
 
-                if self.p_cond[var] is None:
+                if p_cond[var] is None:
                     scale[obs_nomiss, ivar] = scale_true[var][obs_nomiss]
                 else:
                     scale[obs_nomiss, ivar] = np.sqrt(
@@ -624,24 +889,24 @@ class Likelihood:
                 dzdv[obs_nocen, ivar] = 1. / scale[obs_nocen, ivar]
 
             else:
-                if self.p_cond[var] is None:
+                if p_cond[var] is None:
 
-                    F_obs[obs_nomiss, ivar] = self.p_obs[var].cdf(
+                    F_obs[obs_nomiss, ivar] = p_obs[var].cdf(
                         t_v, *shape_true[var][:, obs_nomiss], t_lt,
                         scale_true[var][obs_nomiss])
 
-                    f_obs[obs_nomiss, ivar] = self.p_obs[var].pdf(
+                    f_obs[obs_nomiss, ivar] = p_obs[var].pdf(
                         t_v, *shape_true[var][:, obs_nomiss], t_lt,
                         scale_true[var][obs_nomiss])
 
                 else:
 
-                    f_obs[obs_nomiss, ivar] = self.p_obs[var].pdf(
+                    f_obs[obs_nomiss, ivar] = p_obs[var].pdf(
                         t_v, *shape_cond[var][:, obs_nomiss],
                         *shape_true[var][:, obs_nomiss],
                         t_sc, t_lt, scale_true[var][obs_nomiss])
 
-                    F_obs[obs_nomiss, ivar] = self.p_obs[var].cdf(
+                    F_obs[obs_nomiss, ivar] = p_obs[var].cdf(
                         t_v, *shape_cond[var][:, obs_nomiss],
                         *shape_true[var][:, obs_nomiss],
                         t_sc, t_lt, scale_true[var][obs_nomiss])
@@ -654,35 +919,35 @@ class Likelihood:
                     (eps + f_obs[obs_nocen, ivar])
                     / (eps + scipy.stats.norm._pdf(z[obs_nocen, ivar])))
 
-            if ((not trivial_R) and (self.p_cond[var] is not None)
-                    and (self.p_obs[var].name != 'norm') and num_nomiss > 0):
+            if ((not trivial_R) and (p_cond[var] is not None)
+                    and (p_obs[var].name != 'norm') and num_nomiss > 0):
                 # auxiliary data to compute t_diag (true-obs correlation)
                 # define x_plus, p_cond_plus, p_cond_minus
                 true_plus = t_v
                 x_plus[obs_nomiss, ivar] = scipy.stats.norm.ppf(
-                    self.p_true[var].cdf(
+                    p_true[var].cdf(
                         true_plus, *shape_true[var][:, obs_nomiss],
                         loc=loc_true[var][obs_nomiss],
                         scale=scale_true[var][obs_nomiss]))
 
-                true_minus = self.p_true[var].ppf(
+                true_minus = p_true[var].ppf(
                     scipy.stats.norm.cdf(-x_plus[obs_nomiss, ivar]),
                     *shape_true[var][:, obs_nomiss],
                     loc=loc_true[var][obs_nomiss],
                     scale=scale_true[var][obs_nomiss])
 
-                #loc_xy, scale_xy, *shape_xy = self.p_obs[var].param_map_XY(
+                #loc_xy, scale_xy, *shape_xy = p_obs[var].param_map_XY(
                 #    true_plus, t_sc, *shape_cond[var][:, obs_nomiss])
                 loc_xy, scale_xy, *shape_xy = (true_plus,
                     t_sc, *shape_cond[var][:, obs_nomiss])
-                p_cond_plus[obs_nomiss, ivar] = self.p_cond[var].pdf(
+                p_cond_plus[obs_nomiss, ivar] = p_cond[var].pdf(
                     t_v, *shape_xy, loc=loc_xy, scale=scale_xy)
 
-                #loc_xy, scale_xy, *shape_xy = self.p_obs[var].param_map_XY(
+                #loc_xy, scale_xy, *shape_xy = p_obs[var].param_map_XY(
                 #    true_minus, t_sc, *shape_cond[var][:, obs_nomiss])
                 loc_xy, scale_xy, *shape_xy = (
                     true_minus, t_sc, *shape_cond[var][:, obs_nomiss])
-                p_cond_minus[obs_nomiss, ivar] = self.p_cond[var].pdf(
+                p_cond_minus[obs_nomiss, ivar] = p_cond[var].pdf(
                     t_v, *shape_xy, loc=loc_xy, scale=scale_xy)
 
         t_diag = np.zeros((Nvar, Nmod))
@@ -743,11 +1008,11 @@ class Likelihood:
                     if ivar not in sel_nomiss:
                         continue
 
-                    if self.p_cond[var] is None:
+                    if p_cond[var] is None:
 
                         t_diag[ivar, :] = 1
 
-                    elif self.p_obs[var].name == 'norm':
+                    elif p_obs[var].name == 'norm':
 
                         t_diag[ivar, :] = scale_true[var][i] / scale[i, ivar]
 
