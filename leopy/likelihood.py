@@ -835,9 +835,7 @@ class Likelihood:
         f_obs = np.zeros((Nobs, Nvar, Nmod))
         F_obs = np.zeros_like(f_obs)
 
-        p_cond_plus = np.zeros_like(f_obs)
-        p_cond_minus = np.zeros_like(f_obs)
-        x_plus = np.zeros_like(f_obs)
+        var_z = np.zeros_like(f_obs)
 
         prob = np.ones((Nobs, Nmod))
         eps = 1e-300
@@ -891,25 +889,19 @@ class Likelihood:
             else:
                 if p_cond[var] is None:
 
-                    F_obs[obs_nomiss, ivar] = p_obs[var].cdf(
-                        t_v, *shape_true[var][:, obs_nomiss], t_lt,
-                        scale_true[var][obs_nomiss])
-
-                    f_obs[obs_nomiss, ivar] = p_obs[var].pdf(
+                    aux_args = (
                         t_v, *shape_true[var][:, obs_nomiss], t_lt,
                         scale_true[var][obs_nomiss])
 
                 else:
 
-                    f_obs[obs_nomiss, ivar] = p_obs[var].pdf(
+                    aux_args = (
                         t_v, *shape_cond[var][:, obs_nomiss],
                         *shape_true[var][:, obs_nomiss],
                         t_sc, t_lt, scale_true[var][obs_nomiss])
 
-                    F_obs[obs_nomiss, ivar] = p_obs[var].cdf(
-                        t_v, *shape_cond[var][:, obs_nomiss],
-                        *shape_true[var][:, obs_nomiss],
-                        t_sc, t_lt, scale_true[var][obs_nomiss])
+                F_obs[obs_nomiss, ivar] = p_obs[var].cdf(*aux_args)
+                f_obs[obs_nomiss, ivar] = p_obs[var].pdf(*aux_args)
 
                 # compute z (standard normal distributed observable)
                 # z = inv_Phi(CDF_obs(y)) and dz/dy = PDF_obs(y)/phi(z)
@@ -921,34 +913,27 @@ class Likelihood:
 
             if ((not trivial_R) and (p_cond[var] is not None)
                     and (p_obs[var].name != 'norm') and num_nomiss > 0):
-                # auxiliary data to compute t_diag (true-obs correlation)
-                # define x_plus, p_cond_plus, p_cond_minus
-                true_plus = t_v
-                x_plus[obs_nomiss, ivar] = scipy.stats.norm.ppf(
-                    p_true[var].cdf(
-                        true_plus, *shape_true[var][:, obs_nomiss],
-                        loc=loc_true[var][obs_nomiss],
-                        scale=scale_true[var][obs_nomiss]))
 
-                true_minus = p_true[var].ppf(
-                    scipy.stats.norm.cdf(-x_plus[obs_nomiss, ivar]),
+                aux_args = (
+                    t_v, *shape_cond[var][:, obs_nomiss],
                     *shape_true[var][:, obs_nomiss],
-                    loc=loc_true[var][obs_nomiss],
-                    scale=scale_true[var][obs_nomiss])
+                    t_sc, t_lt, scale_true[var][obs_nomiss])
 
-                #loc_xy, scale_xy, *shape_xy = p_obs[var].param_map_XY(
-                #    true_plus, t_sc, *shape_cond[var][:, obs_nomiss])
-                loc_xy, scale_xy, *shape_xy = (true_plus,
-                    t_sc, *shape_cond[var][:, obs_nomiss])
-                p_cond_plus[obs_nomiss, ivar] = p_cond[var].pdf(
-                    t_v, *shape_xy, loc=loc_xy, scale=scale_xy)
+                aux_fac = np.zeros(f_obs[obs_nomiss, ivar].shape)
+                sel = f_obs[obs_nomiss, ivar]>0
 
-                #loc_xy, scale_xy, *shape_xy = p_obs[var].param_map_XY(
-                #    true_minus, t_sc, *shape_cond[var][:, obs_nomiss])
-                loc_xy, scale_xy, *shape_xy = (
-                    true_minus, t_sc, *shape_cond[var][:, obs_nomiss])
-                p_cond_minus[obs_nomiss, ivar] = p_cond[var].pdf(
-                    t_v, *shape_xy, loc=loc_xy, scale=scale_xy)
+                aux_fac[sel] = 1./f_obs[obs_nomiss, ivar][sel]
+
+                avg_z_given_obs = p_obs[var].mom(
+                    lambda z: z, *aux_args) * aux_fac
+                avg_z2_given_obs = p_obs[var].mom(
+                    lambda z: z**2, *aux_args) * aux_fac
+
+                aux = (avg_z2_given_obs - avg_z_given_obs**2)
+                aux[~sel] = 1.
+                aux[aux>1] = 1.
+                aux[aux<0] = 0.
+                var_z[obs_nomiss, ivar] = aux
 
         t_diag = np.zeros((Nvar, Nmod))
 
@@ -1017,32 +1002,11 @@ class Likelihood:
                         t_diag[ivar, :] = scale_true[var][i] / scale[i, ivar]
 
                     else:
-                        with np.errstate(divide='ignore', invalid='ignore',
-                                         over='ignore'):
-                            lnp = np.log(p_cond_plus[i, ivar]
-                                         / p_cond_minus[i, ivar])
-                            zx = z[i, ivar]*x_plus[i, ivar]
-                            aux = lnp / zx
 
-                        t_diag[ivar] = 0.
+                        t_diag[ivar] = np.sqrt(1 - var_z[i, ivar])
 
-                        sel = np.isinf(aux)
-                        t_diag[ivar, sel] = np.sign(aux[sel])
-                        sel = np.isnan(lnp)
+                        sel = np.isnan(t_diag[ivar])
                         t_diag[ivar, sel] = 0.
-                        sel = np.isnan(aux) & ~np.isnan(lnp)
-                        t_diag[ivar, sel] = (np.sign(lnp[sel])
-                                             * np.sign(zx[sel]))
-
-                        sel = (np.isinf(aux)) | (np.isnan(aux))
-                        aux[sel] = 0.
-
-                        sel = (aux > 0)
-                        t_diag[ivar, sel] = (
-                            -1/aux[sel] + np.sqrt(1/aux[sel]**2 + 1))
-                        sel = (aux < 0)
-                        t_diag[ivar, sel] = (
-                            -1/aux[sel] - np.sqrt(1/aux[sel]**2 + 1))
 
                         if (np.any(np.isnan(t_diag[ivar]))
                             or np.any(t_diag[ivar] < -1)

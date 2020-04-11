@@ -219,7 +219,7 @@ class Convolution(scipy.stats.rv_continuous):
         return (broadcast_shape, broadcast_num, x, scale_XY, loc_Y, scale_Y,
                 *shape_args)
 
-    def _quad_conv(self, is_pdf, X, scale_XY, loc_Y, scale_Y, *shape_args):
+    def _quad_conv(self, is_pdf, X, g, scale_XY, loc_Y, scale_Y, *shape_args):
         """PDF of RV X computed by convolution - do not call directly."""
         (broadcast_shape, broadcast_num, X, scale_XY, loc_Y, scale_Y,
             *shape_args) = self._broadcast(
@@ -265,10 +265,16 @@ class Convolution(scipy.stats.rv_continuous):
             else:
                 p_XY = self.p_XY._cdf
 
+            ret = p_XY(xhat, *sh_xy) * p_Y(yhat, *sh_y)
+
             if log_mode:
-                return (p_XY(xhat, *sh_xy) * p_Y(yhat, *sh_y) * yhat)
-            else:
-                return (p_XY(xhat, *sh_xy) * p_Y(yhat, *sh_y))
+                ret *= yhat
+
+            if g:
+                z = scipy.stats.norm.ppf(self.p_Y._cdf(yhat, *sh_y))
+                ret *= g(z)
+
+            return ret
 
         # limit of yhat = (y - loc_Y)/scale_Y
         # set limits based on cdf of self.p_Y, i.e., find range
@@ -310,10 +316,9 @@ class Convolution(scipy.stats.rv_continuous):
             n_iter=self.n_iter, maxiter=self.maxiter)[0] + add
 
         if is_pdf:
-            result = np.maximum(0., result)
-            return result.reshape(broadcast_shape) / scale_XY
+            # return result.reshape(broadcast_shape) / scale_XY
+            return (result / scale_XY).reshape(broadcast_shape)
         else:
-            result = np.minimum(1., np.maximum(0., result))
             return result.reshape(broadcast_shape)
 
     def _pdf(self, x, *args):
@@ -325,8 +330,9 @@ class Convolution(scipy.stats.rv_continuous):
             scale = np.sqrt(scale_Y**2 + scale_XY**2)
             return scipy.stats.norm._pdf((x - loc_Y)/scale) / scale
 
-        return self._quad_conv(True, x, scale_XY, loc_Y, scale_Y,
-                               *args[:self.shapes_numargs])
+        result = self._quad_conv(True, x, None, scale_XY, loc_Y, scale_Y,
+                                 *args[:self.shapes_numargs])
+        return np.maximum(0., result)
 
     def _cdf(self, x, *args):
         """CDF of random variable X."""
@@ -337,8 +343,9 @@ class Convolution(scipy.stats.rv_continuous):
             return scipy.stats.norm.cdf(
                 x, loc=loc_Y, scale=np.sqrt(scale_Y**2 + scale_XY**2))
 
-        return self._quad_conv(False, x, scale_XY, loc_Y, scale_Y,
-                               *args[:self.shapes_numargs])
+        result = self._quad_conv(False, x, None, scale_XY, loc_Y, scale_Y,
+                                 *args[:self.shapes_numargs])
+        return np.minimum(1., np.maximum(0., result))
 
     def _ppf_conv(self, q, scale_XY, loc_Y, scale_Y, *shape_args):
         """PPF of RV X computed by convolution - do not call directly."""
@@ -348,11 +355,11 @@ class Convolution(scipy.stats.rv_continuous):
 
         def f(x, q, scale_XY, loc_Y, scale_Y, *shape_args):
             return self._quad_conv(
-                False, x, scale_XY, loc_Y, scale_Y, *shape_args) - q
+                False, x, None, scale_XY, loc_Y, scale_Y, *shape_args) - q
 
         def fprime(x, q, scale_XY, loc_Y, scale_Y, *shape_args):
             return self._quad_conv(
-                True, x, scale_XY, loc_Y, scale_Y, *shape_args)
+                True, x, None, scale_XY, loc_Y, scale_Y, *shape_args)
 
         out = np.zeros(broadcast_num)
         for i, (lq, lscale_XY, lloc_Y, lscale_Y, *lshape) in enumerate(
@@ -374,6 +381,15 @@ class Convolution(scipy.stats.rv_continuous):
 
         return self._ppf_conv(q, scale_XY, loc_Y, scale_Y,
                               *args[:self.shapes_numargs])
+
+    def mom(self, g, x, *args):
+        """Return int dy*P_X|Y(x,y)*P_Y(y)*g(z(y))"""
+
+        scale_XY, loc_Y, scale_Y = args[
+            self.shapes_numargs:self.shapes_numargs+3]
+
+        return self._quad_conv(True, x, g, scale_XY, loc_Y, scale_Y,
+                               *args[:self.shapes_numargs])
 
 
 if __name__ == '__main__':
