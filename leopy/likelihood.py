@@ -36,18 +36,21 @@ class Likelihood:
         obs : object or int
             Instance of class `Observation` containing the observed data or
             the number of observables per data point.
-        p_true : object or str
+        p_true : object or str or None
             Instance of class `scipy.stats.rv_continuous` describing the
             probability distribution of the true values of a given observable.
             The member functions _pdf(), _cdf(), and _ppf() are used during the
-            likelihood calculation.
-            If `p_true` is a string, it assumes it is a function of the same
-            name defined in in scipy.stats. (the default is 'norm').
+            likelihood calculation. If `p_true` is a string, it assumes it is a
+            function of the same name defined in in scipy.stats. `p_true` can
+            also be a list or tuple or instances of class
+            `scipy.stats.rv_continuous`, one per given observable. If set to
+            None, the probability density is assumed to be a delta function
+            (the default is 'norm').
         p_cond : object or str or None
             Same as `p_true` but describing the conditional probability
             distribution of the observed values given the true values of a
-            given observable. If set to None, the conditional probability is
-            assumed to be a delta function, i.e., p_obs = p_true
+            given observable. If set to None, the conditional probability
+            density is assumed to be a delta function, i.e., p_obs = p_true
             (the default is None).
         verbosity : int
             Level of verbosity (default is 0, i.e., no additional output)
@@ -107,12 +110,21 @@ class Likelihood:
         # set self.p_obs
         self.p_obs = []
         for var in range(num_var):
-            if self.p_cond[var] is not None:
-                self.p_obs.append(leopy.Convolution(
-                    self.p_cond[var], self.p_true[var], verbosity=verbosity,
-                    **kwargs))
+            if self.p_cond[var] is None:
+                if self.p_true[var] is None:
+                    self.p_true[var] = scipy.stats.norm(scale=1e-30)
+                    print('p_cond and p_true cannot both be delta functions - '
+                          'adjusting p_true to be normal with scale of 1e-30.')
+                    self.p_obs.append(self.p_true[var])
+                else:
+                    self.p_obs.append(self.p_true[var])
             else:
-                self.p_obs.append(self.p_true[var])
+                if self.p_true[var] is None:
+                    self.p_obs.append(self.p_cond[var])
+                else:
+                    self.p_obs.append(leopy.Convolution(
+                        self.p_cond[var], self.p_true[var],
+                        verbosity=verbosity, **kwargs))
 
     def _normal_partial_integral(self, sel_nocen, sel_cen, cov,
                                  limit_type, return_log=False):
@@ -384,7 +396,12 @@ class Likelihood:
         for ivar, var in enumerate(vars):
             for s, l in zip([loc_true[var], scale_true[var]],
                             ['loc_true', 'scale_true']):
-                if ((s.ndim > 0)
+                if s.size == 0 or s is None:
+                    if l == 'loc_true':
+                        loc_true[var] = np.array(0)
+                    elif l == 'scale_true':
+                        scale_true[var] = np.array(1)
+                elif ((s.ndim > 0)
                         and (s.shape[0] != obs.Nobs) and (s.shape[0] != 1)):
                     raise ValueError(
                         '{} for variable {} should be numpy array of '
@@ -868,7 +885,6 @@ class Likelihood:
 
             t_v = v[obs_nomiss, var].reshape(num_nomiss, 1)
             t_lt = loc_true[var][obs_nomiss]
-            # t_sc = np.outer(scale_cond[obs_nomiss, var], np.ones(Nmod))
             if p_cond[var] is not None:
                 t_sc = scale_cond[obs_nomiss, var].reshape(num_nomiss, 1)
 
@@ -876,10 +892,13 @@ class Likelihood:
 
                 if p_cond[var] is None:
                     scale[obs_nomiss, ivar] = scale_true[var][obs_nomiss]
+
+                elif p_true[var] is None:
+                    scale[obs_nomiss, ivar] = t_sc
+
                 else:
                     scale[obs_nomiss, ivar] = np.sqrt(
-                        (scale_cond[obs_nomiss, var]**2).reshape(num_nomiss, 1)
-                        + scale_true[var][obs_nomiss]**2)
+                        t_sc**2 + scale_true[var][obs_nomiss]**2)
 
                 # compute z (standard normal distributed observable)
                 # z = inv_Phi(CDF_obs(y)) and dz/dy = PDF_obs(y)/phi(z)
@@ -887,14 +906,18 @@ class Likelihood:
                 dzdv[obs_nocen, ivar] = 1. / scale[obs_nocen, ivar]
 
             else:
-                if p_cond[var] is None:
 
+                if p_cond[var] is None:
                     aux_args = (
                         t_v, *shape_true[var][:, obs_nomiss], t_lt,
                         scale_true[var][obs_nomiss])
 
-                else:
+                elif p_true[var] is None:
+                    aux_args = (
+                        t_v, *shape_cond[var][:, obs_nomiss], t_lt,
+                        t_sc)
 
+                else:
                     aux_args = (
                         t_v, *shape_cond[var][:, obs_nomiss],
                         *shape_true[var][:, obs_nomiss],
@@ -911,8 +934,9 @@ class Likelihood:
                     (eps + f_obs[obs_nocen, ivar])
                     / (eps + scipy.stats.norm._pdf(z[obs_nocen, ivar])))
 
-            if ((not trivial_R) and (p_cond[var] is not None)
-                    and (p_obs[var].name != 'norm') and num_nomiss > 0):
+            if ((not trivial_R) and (p_cond[var] is not None) and
+                    (p_true[var] is not None) and (p_obs[var].name != 'norm')
+                    and num_nomiss > 0):
 
                 aux_args = (
                     t_v, *shape_cond[var][:, obs_nomiss],
@@ -996,6 +1020,10 @@ class Likelihood:
                     if p_cond[var] is None:
 
                         t_diag[ivar, :] = 1
+
+                    elif p_true[var] is None:
+
+                        t_diag[ivar, :] = 0
 
                     elif p_obs[var].name == 'norm':
 
