@@ -113,7 +113,9 @@ class Likelihood:
             if self.p_cond[var] is None:
                 if self.p_true[var] is None:
                     self.p_true[var] = scipy.stats.norm(scale=1e-30)
-                    print('p_cond and p_true cannot both be delta functions - '
+                    self.p_true[var].numargs = 0
+                    self.p_true[var].name = 'norm'
+                    print('p_cond and p_true are both set to delta functions - '
                           'adjusting p_true to be normal with scale of 1e-30.')
                     self.p_obs.append(self.p_true[var])
                 else:

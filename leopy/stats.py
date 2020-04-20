@@ -61,7 +61,6 @@ import warnings
 
 from leopy.misc import AccuracyWarning
 
-
 class zi_gamma_gen(scipy.stats.rv_continuous):
     r"""A (pseudo) zero-inflated gamma continous random variable.
 
@@ -440,6 +439,25 @@ class gamma_lognorm_gen(scipy.stats.rv_continuous):
             (np.asarray(args[3]) <= 1))
         return cond
 
+    def prob_component(self, x, *args, **kwds):
+        """Calculate probability that x belongs to each component."""
+        args, loc, scale = self._parse_args(*args, **kwds)
+        p = self._prob_component((x-loc)/scale, *args)
+        return p / np.sum(p, axis=0)
+
+    def rvs_component(self, x, *args, **kwds):
+        """Assign x to one of the components in a probabilistic fashion."""
+        p = self.prob_component(x, *args, **kwds)
+        m = np.zeros(len(x), dtype=int)
+        for i in range(len(x)):
+            try:
+                m[i] = np.round(np.nonzero(
+                    scipy.stats.multinomial.rvs(n=1, p=p[:, i], size=1))[1][0])
+            except ValueError:
+                m[i] = -1
+
+        return m
+
 gamma_lognorm = gamma_lognorm_gen(name='gamma_lognorm')
 
 
@@ -524,6 +542,25 @@ class gamma_gamma_gen(scipy.stats.rv_continuous):
             np.logical_and(cond, (np.asarray(args[3]) >= 0)),
             (np.asarray(args[3]) <= 1))
         return cond
+
+    def prob_component(self, x, *args, **kwds):
+        """Calculate probability that x belongs to each component."""
+        args, loc, scale = self._parse_args(*args, **kwds)
+        p = self._prob_component((x-loc)/scale, *args)
+        return p / np.sum(p, axis=0)
+
+    def rvs_component(self, x, *args, **kwds):
+        """Assign x to one of the components in a probabilistic fashion."""
+        p = self.prob_component(x, *args, **kwds)
+        m = np.zeros(len(x), dtype=int)
+        for i in range(len(x)):
+            try:
+                m[i] = np.round(np.nonzero(
+                    scipy.stats.multinomial.rvs(n=1, p=p[:, i], size=1))[1][0])
+            except ValueError:
+                m[i] = -1
+
+        return m
 
 gamma_gamma = gamma_gamma_gen(name='gamma_gamma')
 
