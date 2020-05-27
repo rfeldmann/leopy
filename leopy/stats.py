@@ -61,7 +61,6 @@ import warnings
 
 from leopy.misc import AccuracyWarning
 
-
 class zi_gamma_gen(scipy.stats.rv_continuous):
     r"""A (pseudo) zero-inflated gamma continous random variable.
 
@@ -284,9 +283,9 @@ class zi_gamma_gamma_gen(zi_gamma_gen):
 
     for :math:`x \ge 0`, :math:`a > 0`, :math:`s > 0`, :math:`0 \le z \le 1`,
     :math:`A > 0`, :math:`S > 0`, and :math:`0 \le Z \le 1`.
-    Here :math:`\Gamma(a)` refers to the gamma function.
+    Here :math:`\Gamma()` refers to the gamma function.
 
-    `zi_gamma_lognorm` takes ``a``, ``s``, ``z``, ``A``, ``S``, and ``Z`` as
+    `zi_gamma_gamma` takes ``a``, ``s``, ``z``, ``A``, ``S``, and ``Z`` as
     shape parameters for :math:`a`, :math:`s`, :math:`z`, :math:`A`, :math:`S`,
     and :math:`Z`.
 
@@ -440,7 +439,130 @@ class gamma_lognorm_gen(scipy.stats.rv_continuous):
             (np.asarray(args[3]) <= 1))
         return cond
 
+    def prob_component(self, x, *args, **kwds):
+        """Calculate probability that x belongs to each component."""
+        args, loc, scale = self._parse_args(*args, **kwds)
+        p = self._prob_component((x-loc)/scale, *args)
+        return p / np.sum(p, axis=0)
+
+    def rvs_component(self, x, *args, **kwds):
+        """Assign x to one of the components in a probabilistic fashion."""
+        p = self.prob_component(x, *args, **kwds)
+        m = np.zeros(len(x), dtype=int)
+        for i in range(len(x)):
+            try:
+                m[i] = np.round(np.nonzero(
+                    scipy.stats.multinomial.rvs(n=1, p=p[:, i], size=1))[1][0])
+            except ValueError:
+                m[i] = -1
+
+        return m
+
 gamma_lognorm = gamma_lognorm_gen(name='gamma_lognorm')
+
+
+class gamma_gamma_gen(scipy.stats.rv_continuous):
+    r"""A gamma + gamma continuous random variable.
+
+    Subclass of `scipy.stats.rv_continuous`.
+
+    This class implements a mixture model of two gammas.
+    A possible use of the second gamma distribution is to model outliers from
+    the primary (gamma) distribution.
+
+    Notes
+    -----
+    The probability density function for `gamma_gamma` is:
+
+    .. math::
+        f(x, a, A, S, Z) =
+            (1-Z)\left[\frac{x^{a-1} \exp(-x)}{\Gamma(a)}\right] \\
+             + Z \left[\frac{x^{A-1}\exp(-x/S)}{S^A\Gamma(A)}\right]
+
+    for :math:`x \ge 0`, :math:`a > 0`, :math:`A > 0`, :math:`S > 0`, and
+    :math:`0 \le Z \le 1`. Here :math:`\Gamma()` refers to the gamma function.
+
+    `gamma_gamma` takes ``a``, ``A``, ``S``, and ``Z`` as shape parameters for
+    :math:`a`, :math:`A`, :math:`S`, and :math:`Z`.
+
+    The probability density above is defined in the "standardized" form. To
+    shift and/or scale the distribution use the ``loc`` and ``scale``
+    parameters.
+    Specifically, ``gamma_gamma.pdf(x, a, A, S, Z, loc, scale)``
+    is equivalent to ``zgamma_gamma.pdf(y, a, A, S, Z) / scale`` with
+    ``y = (x - loc) / scale``.
+    """
+    def __init__(self, *args, **kwargs):
+        self._return_index = kwargs.pop('index', False)
+        super().__init__(*args, **kwargs)
+        self.a = 0
+        self.b = np.inf
+
+    def set_return_index(self, flag):
+        """If set to True, rvs() will produce additional output"""
+        self._return_index = flag
+
+    def _pdf(self, x, a, A, S, Z):
+        return ((1-Z)*scipy.stats.gamma._pdf(x, a)
+                 + Z*scipy.stats.gamma._pdf(x/S, A)/S)
+
+    def _cdf(self, x, a, A, S, Z):
+        return ((1-Z)*scipy.stats.gamma._cdf(x, a)
+                + Z*scipy.stats.gamma._cdf(x/S, A))
+
+    def _rvs(self, a, A, S, Z):
+        sz = self._size
+        ind = self._return_index
+        be = scipy.stats.bernoulli.rvs(Z, size=sz)
+        ga2 = scipy.stats.gamma.rvs(A, size=sz, scale=S)
+        ga = scipy.stats.gamma.rvs(a, size=sz)
+        if ind:
+            return np.where(be, ga2, ga), be
+        else:
+            return np.where(be, ga2, ga)
+
+    def _prob_component(self, x, a, A, S, Z):
+        p = np.zeros((2, len(x)))
+        p[0, :] = (1-Z)*scipy.stats.gamma._pdf(x, a)
+        p[1, :] = Z*scipy.stats.gamma._pdf(x/S, A)/S
+        return p
+
+    def _argcheck(self, *args):
+        """Check for correct values on args and keywords.
+
+        Returns condition array of 1's where arguments are correct and
+         0's where they are not.
+
+        """
+        cond = 1
+        cond = np.logical_and(cond, (np.asarray(args[0]) > 0))
+        cond = np.logical_and(cond, (np.asarray(args[1]) > 0))
+        cond = np.logical_and(cond, (np.asarray(args[2]) > 0))
+        cond = np.logical_and(
+            np.logical_and(cond, (np.asarray(args[3]) >= 0)),
+            (np.asarray(args[3]) <= 1))
+        return cond
+
+    def prob_component(self, x, *args, **kwds):
+        """Calculate probability that x belongs to each component."""
+        args, loc, scale = self._parse_args(*args, **kwds)
+        p = self._prob_component((x-loc)/scale, *args)
+        return p / np.sum(p, axis=0)
+
+    def rvs_component(self, x, *args, **kwds):
+        """Assign x to one of the components in a probabilistic fashion."""
+        p = self.prob_component(x, *args, **kwds)
+        m = np.zeros(len(x), dtype=int)
+        for i in range(len(x)):
+            try:
+                m[i] = np.round(np.nonzero(
+                    scipy.stats.multinomial.rvs(n=1, p=p[:, i], size=1))[1][0])
+            except ValueError:
+                m[i] = -1
+
+        return m
+
+gamma_gamma = gamma_gamma_gen(name='gamma_gamma')
 
 
 def nearest_psd(A):
